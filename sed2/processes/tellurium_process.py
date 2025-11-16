@@ -7,14 +7,6 @@ import tellurium as te
 
 
 class TelluriumUTCStep(Step):
-    """
-    Minimal Tellurium ODE Step.
-    Uses only:
-        - te.loadSBMLModel()
-        - rr.simulate()
-
-    Output format matches CopasiUTCStep exactly.
-    """
 
     config_schema = {
         "model_source": "string",
@@ -35,7 +27,7 @@ class TelluriumUTCStep(Step):
                 model_path = project_root / model_path
             model_source = str(model_path)
 
-        # ----- Minimal Tellurium load -----
+        # ----- Minimal Tellurium load (SBML) -----
         try:
             self.rr = te.loadSBMLModel(model_source)
         except Exception as e:
@@ -74,53 +66,56 @@ class TelluriumUTCStep(Step):
     # update logic
     # ------------------------------------------------
     def update(self, inputs):
-        # Choose source (like CopasiUTCStep)
+        # 1) Choose source (like CopasiUTCStep)
         incoming = (
             inputs.get("species_counts")
             or inputs.get("species_concentrations")
             or {}
         )
 
-        # Update concentrations
-        conc_vec = list(self.rr.getFloatingSpeciesConcentrations())
+        # 2) Update species concentrations using Tellurium's setValue
+        #    (this matches the TelluriumProcess style you showed)
         for sid, value in incoming.items():
-            idx = self._species_index.get(sid)
-            if idx is not None:
-                conc_vec[idx] = float(value)
-        self.rr.setFloatingSpeciesConcentrations(conc_vec)
+            if sid in self._species_index:
+                self.rr.setValue(sid, float(value))
 
-        # Run simulation
+        # 3) Run simulation: from 0 -> interval, n_points samples
         tc = self.rr.simulate(0, self.interval, self.n_points)
         colnames = list(tc.colnames)
 
         # Time
         time = tc[:, colnames.index("time")].tolist()
 
-        # Species trajectories
-        species_json = {}
-        species_cols = {}
+        # 4) Species trajectories
+        species_json: Dict[str, list] = {}
+        species_cols: Dict[str, int] = {}
         for sid in self.species_ids:
             if sid in colnames:
                 idx = colnames.index(sid)
                 species_cols[sid] = idx
                 species_json[sid] = tc[:, idx].tolist()
 
-        # Reaction fluxes
+        # 5) Reaction flux time series
         flux_json = {rid: [] for rid in self.reaction_ids}
-        saved = list(self.rr.getFloatingSpeciesConcentrations())
 
+        # For each time point, set state and query reaction rates
         for row in range(tc.shape[0]):
-            row_conc = [tc[row, species_cols[sid]] for sid in self.species_ids]
-            self.rr.setFloatingSpeciesConcentrations(row_conc)
+            # build concentration vector at this row
+            for sid in self.species_ids:
+                if sid in species_cols:
+                    self.rr.setValue(sid, float(tc[row, species_cols[sid]]))
 
             rates = self.rr.getReactionRates()
             for j, rid in enumerate(self.reaction_ids):
                 flux_json[rid].append(float(rates[j]))
 
-        # restore last state
-        self.rr.setFloatingSpeciesConcentrations(row_conc)
+        # 6) Restore last state (final row of the timecourse)
+        last_row = tc.shape[0] - 1
+        for sid in self.species_ids:
+            if sid in species_cols:
+                self.rr.setValue(sid, float(tc[last_row, species_cols[sid]]))
 
-        # JSON-safe result
+        # 7) JSON-safe result (matches CopasiUTCStep format)
         return {
             "results": {
                 "time": time,
@@ -141,8 +136,11 @@ def run_test(core):
         core=core,
     )
 
-    print("Initial:", step.initial_state())
-    print("Results:", step.update(step.initial_state()))
+    init = step.initial_state()
+    print("Initial:", init)
+    
+    result = step.update(init)
+    # print("Results:", )
 
 
 if __name__ == "__main__":
