@@ -400,7 +400,7 @@ class CopasiUTCProcess(Process):
 
 
 
-def run_test(core):
+def run_copasi_utc(core):
 
     copasi_process = CopasiUTCStep({
                 'model_source': 'models/BIOMD0000000012_url.xml',  # represillator model
@@ -416,9 +416,26 @@ def run_test(core):
     print(f'Results: {results}')
 
 
-    
+def run_copasi_ss(core):
+
+    copasi_process = CopasiSteadyStateStep({
+                'model_source': 'models/BIOMD0000000012_url.xml',  # represillator model
+            }, core=core)
+
+    initial_state = copasi_process.initial_state()
+
+    print(f'Initial state: {initial_state}')
+
+    results = copasi_process.update(initial_state)
+
+    print(f'Results: {results}')
+
+
 if __name__ == '__main__':
     core = ProcessTypes()
     core.register_process('copasi_utc', CopasiUTCStep)
+    core.register_process('copasi_ss', CopasiSteadyStateStep)
+    core.register_process('copasi_process', CopasiUTCProcess)
 
-    run_test(core=core)
+    run_copasi_utc(core=core)
+    run_copasi_ss(core=core)
