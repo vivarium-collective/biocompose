@@ -1,5 +1,8 @@
+import os
+from pathlib import Path
 from typing import Dict, Any
-from process_bigraph import Process, Step, Composite, ProcessTypes
+from process_bigraph import Process, Step, Composite, ProcessTypes, gather_emitter_results
+import COPASI
 from basico import (
     load_model,
     get_species,
@@ -53,21 +56,36 @@ class CopasiUTCStep(Step):
     """
 
     config_schema = {
-        # Path or identifier for the COPASI model (cps / sbml)
         'model_source': 'string',
-        # simulation time interval
         'time': 'float',
     }
 
     def __init__(self, config=None, core=None):
         super().__init__(config, core)
 
+        model_source = self.config['model_source']
+
+        # Make sure the path is correct (relative to this file if needed)
+        if not (model_source.startswith('http://') or model_source.startswith('https://')):
+            model_path = Path(model_source)
+            if not model_path.is_absolute():
+                # go to the *project root*, not the processes/ directory
+                project_root = Path(__file__).parent.parent
+                model_path = project_root / model_path
+            model_source = str(model_path)
+
         # basico DataModel
-        self.dm = load_model(self.config['model_source'])
+        self.dm = load_model(model_source)
+
+        if self.dm is None:
+            raise RuntimeError(
+                f"load_model({model_source!r}) returned None. "
+                "Check that the file exists and is a valid COPASI/SBML model."
+            )
+
         # underlying COPASI CModel (used by the speed-up helpers)
         self.cmodel = self.dm.getModel()
 
-        # cache species and reaction names once
         spec_df = get_species(model=self.dm)
         self.species_names = spec_df.index.tolist()
 
@@ -130,14 +148,12 @@ class CopasiUTCStep(Step):
         )
 
         # --- 3) Read back state using the fast helper ---
-
         species_concentrations = {
             name: _get_transient_concentration(name=name, dm=self.dm)
             for name in self.species_names
         }
 
         # --- 4) Reaction fluxes  ---
-
         rxn_df = get_reactions(model=self.dm)
         reaction_fluxes = {
             rxn_id: float(rxn_df.loc[rxn_id, 'flux'])
@@ -154,15 +170,19 @@ class CopasiUTCStep(Step):
 
 def run_test(core):
 
-    document = {
-        'copasi': {
-            '_type': 'step',
-            'model_source': 'examples/models/biomass_production.cps',
-            'time': 10.0,
-        }
-    }
+    copasi_process = CopasiUTCStep({
+                'model_source': 'models/BIOMD0000000012_url.xml',  # represillator model
+                'time': 10.0,
+            }, core=core)
 
-    sim = Composite(document, core=core)
+    initial_state = copasi_process.initial_state()
+
+    print(f'Initial state: {initial_state}')
+
+    results = copasi_process.update(initial_state)
+
+    print(f'Results: {results}')
+
 
     
 if __name__ == '__main__':
