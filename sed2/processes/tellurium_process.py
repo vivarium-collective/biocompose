@@ -130,17 +130,17 @@ def run_test(core):
     step = TelluriumUTCStep(
         {
             "model_source": "models/BIOMD0000000012_url.xml",
-            "time": 3000,
-            "n_points": 5000,
+            'time': 10.0,
+            'n_points': 5,
         },
         core=core,
     )
 
     init = step.initial_state()
     print("Initial:", init)
-    
-    result = step.update(init)
-    # print("Results:", )
+
+    results = step.update(init)
+    print("Results:", results)
 
 
 if __name__ == "__main__":

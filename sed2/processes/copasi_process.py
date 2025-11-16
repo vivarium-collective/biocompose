@@ -56,6 +56,7 @@ class CopasiUTCStep(Step):
     config_schema = {
         'model_source': 'string',
         'time': 'float',
+        'n_points': 'integer',
     }
 
     def __init__(self, config=None, core=None):
@@ -63,34 +64,38 @@ class CopasiUTCStep(Step):
 
         model_source = self.config['model_source']
 
-        # Make sure the path is correct (relative to this file if needed)
-        if not (model_source.startswith('http://') or model_source.startswith('https://')):
+        # Path resolution
+        if not model_source.startswith(('http://', 'https://')):
             model_path = Path(model_source)
             if not model_path.is_absolute():
-                # go to the *project root*, not the processes/ directory
                 project_root = Path(__file__).parent.parent
                 model_path = project_root / model_path
             model_source = str(model_path)
 
-        # basico DataModel
+        # Load COPASI model
         self.dm = load_model(model_source)
-
         if self.dm is None:
             raise RuntimeError(
                 f"load_model({model_source!r}) returned None. "
                 "Check that the file exists and is a valid COPASI/SBML model."
             )
 
-        # underlying COPASI CModel (used by the speed-up helpers)
         self.cmodel = self.dm.getModel()
 
+        # Cache identifiers
         spec_df = get_species(model=self.dm)
         self.species_names = spec_df.index.tolist()
 
         rxn_df = get_reactions(model=self.dm)
         self.reaction_names = rxn_df.index.tolist()
 
-        self.interval = self.config.get('time', 1.0)
+        # Simulation parameters
+        self.interval = float(self.config.get('time', 1.0))
+        self.n_points = int(self.config.get('n_points', 2))   # <-- NEW
+        if self.n_points < 2:
+            raise ValueError("n_points must be >= 2")
+
+        self.intervals = self.n_points - 1   # COPASI requires this
 
     def initial_state(self) -> Dict[str, Any]:
         species_concentrations = {
@@ -106,7 +111,6 @@ class CopasiUTCStep(Step):
 
         return {
             'species_concentrations': species_concentrations,
-            # 'reaction_fluxes': reaction_fluxes,
         }
 
     def inputs(self):
@@ -116,18 +120,13 @@ class CopasiUTCStep(Step):
         }
 
     def outputs(self):
-        # Keep nested 'results' for now to match your original API.
         return {
             'results': 'any',
         }
 
     def update(self, inputs):
-        # --- 1) Prepare changes and update initial values efficiently ---
-
-        # You can swap this to inputs['species_concentrations'] if that’s the true source
+        # Apply incoming concentrations
         spec_data = inputs.get('species_counts', {}) or {}
-
-        # Only include species that actually exist in the model
         changes = [
             (name, float(value))
             for name, value in spec_data.items()
@@ -137,25 +136,24 @@ class CopasiUTCStep(Step):
         if changes:
             _set_initial_concentrations(changes, self.dm)
 
-        # --- 2) Run COPASI time course ---
+        # --- Run COPASI time course with intervals = n_points - 1 ---
         tc = run_time_course(
             start_time=0.0,
             duration=self.interval,
+            intervals=self.intervals,   # <-- NEW
             update_model=True,
             model=self.dm,
         )
 
-        # time is the index
+        # Time series
         time_list = tc.index.to_list()
 
-        # species time series
         species_json = {
             s: tc[s].to_list()
             for s in self.species_names
             if s in tc.columns
         }
 
-        # reaction flux time series (optional)
         flux_json = {
             r: tc[r].to_list()
             for r in self.reaction_names
@@ -168,8 +166,8 @@ class CopasiUTCStep(Step):
             "reaction_fluxes": flux_json,
         }
 
-        # Everything is now pure Python lists and dicts — fully JSON serializable
         return {"results": results}
+
 
 
 class CopasiSteadyStateStep(Step):
@@ -405,6 +403,7 @@ def run_copasi_utc(core):
     copasi_process = CopasiUTCStep({
                 'model_source': 'models/BIOMD0000000012_url.xml',  # represillator model
                 'time': 10.0,
+                'n_points': 5,
             }, core=core)
 
     initial_state = copasi_process.initial_state()
