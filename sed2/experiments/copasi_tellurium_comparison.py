@@ -6,11 +6,10 @@ from process_bigraph import Composite
 
 def run_comparison_experiment(core):
     doc = {
+        # provide initial values to overwrite those in the configured model
         'species_concentrations': {},
         'species_counts': {},
-        'results': {
-            'tellurium': {},
-            'copasi': {}},
+
         'tellurium_step': {
             '_type': 'step',
             'address': 'local:TelluriumUTCStep',
@@ -26,6 +25,7 @@ def run_comparison_experiment(core):
                 'result': ['results', 'tellurium'],
             },
         },
+
         'copasi_step': {
             '_type': 'step',
             'address': 'local:CopasiUTCStep',
@@ -41,6 +41,7 @@ def run_comparison_experiment(core):
                 'result': ['results', 'copasi'],
             },
         },
+
         'comparison': {
             '_type': 'step',
             'address': 'local:CompareResults',
@@ -57,6 +58,9 @@ def run_comparison_experiment(core):
     doc = {'state': doc}
     sim = Composite(doc, core=core)
     sim.run(0)
+
+    print(
+        sim.state['comparison_result'])
 
     import ipdb; ipdb.set_trace()
 
