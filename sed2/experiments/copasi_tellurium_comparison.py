@@ -16,7 +16,7 @@ def run_comparison_experiment(core):
             'config': {
                 'model_source': 'models/BIOMD0000000012_url.xml',
                 'time': 10,
-                'n_points': 100,
+                'n_points': 10,
             },
             'inputs': {
                 'species_concentrations': ['species_concentrations'],
@@ -32,7 +32,7 @@ def run_comparison_experiment(core):
             'config': {
                 'model_source': 'models/BIOMD0000000012_url.xml',
                 'time': 10,
-                'n_points': 100,
+                'n_points': 10,
             },
             'inputs': {
                 'species_concentrations': ['species_concentrations'],

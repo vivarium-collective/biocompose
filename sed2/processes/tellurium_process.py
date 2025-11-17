@@ -125,12 +125,14 @@ class TelluriumUTCStep(Step):
             self.rr.setValue(sid, float(tc[last_row, idx]))
 
         # 7) Send update — structured for easy comparison / aggregation
-        return {
-            "result": {
+        result = {
                 "time": time,
                 "concentrations": {'_add': species_update},
-                "fluxes": {'_add': flux_json},
+                # "fluxes": {'_add': flux_json},
             }
+        print(f'TelluriumUTCStep result: {result}')
+        return {
+            "result": result
         }
 
 

@@ -113,20 +113,14 @@ class CopasiUTCStep(Step):
             )
             for sbml_id in self.species_ids
         }
-        rxn_df = get_reactions(model=self.dm)
-        reaction_fluxes = {
-            rxn_id: float(rxn_df.loc[rxn_id, 'flux'])
-            for rxn_id in self.reaction_names
-        }
-
         return {
-            'species_concentrations': species_concentrations,
+            'concentrations': species_concentrations,
         }
 
     def inputs(self):
         return {
-            'species_concentrations': 'map[float]',
-            'species_counts': 'map[float]',
+            'concentrations': 'map[float]',
+            'counts': 'map[float]',
         }
 
     def outputs(self):
@@ -136,11 +130,11 @@ class CopasiUTCStep(Step):
 
     def update(self, inputs):
         # Apply incoming concentrations
-        spec_data = inputs.get('species_counts', {}) or {}
+        spec_data = inputs.get('counts', {}) or {}
         changes = [
             (name, float(value))
             for name, value in spec_data.items()
-            if name in self.species_names
+            if name in self.species_ids
         ]
 
         if changes:
@@ -165,17 +159,12 @@ class CopasiUTCStep(Step):
             if sid in tc.columns
         }
 
-        flux_update = {
-            r: tc[r].to_list()
-            for r in self.reaction_names
-            if r in tc.columns
-        }
-
         result = {
             "time": time_list,
             "concentrations": {'_add': species_update},
-            "fluxes": {'_add': flux_update}}
+        }
 
+        print(f'CopasiUTCStep result: {result}')
         return {"result": result}
 
 
@@ -314,8 +303,8 @@ class CopasiSteadyStateStep(Step):
 
         results = {
             "time": time_list,
-            "species_concentrations": species_json,  # SBML IDs as keys
-            "reaction_fluxes": flux_json,
+            "concentrations": species_json,  # SBML IDs as keys
+            "fluxes": flux_json,
         }
 
         return {"results": results}
@@ -397,8 +386,8 @@ class CopasiUTCProcess(Process):
 
     def outputs(self):
         return {
-            "species_concentrations": "map[float]",  # SBML IDs
-            "reaction_fluxes": "map[float]",
+            "concentrations": "map[float]",  # SBML IDs
+            "fluxes": "map[float]",
             "time": "list[float]",
         }
 
@@ -453,8 +442,8 @@ class CopasiUTCProcess(Process):
         }
 
         return {
-            "species_concentrations": species_concentrations,
-            "reaction_fluxes": reaction_fluxes,
+            "concentrations": species_concentrations,
+            "fluxes": reaction_fluxes,
             "time": time,
         }
 

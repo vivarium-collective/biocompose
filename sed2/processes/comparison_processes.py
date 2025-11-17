@@ -6,7 +6,8 @@ from math import sqrt
 from typing import Dict, List, Tuple
 
 
-def mean_squared_error_dict(a, b):
+def mean_squared_error_dict(a: Dict[str, List[float]],
+                            b: Dict[str, List[float]]) -> float:
     sum_sq = 0.0
     count = 0
 
@@ -30,6 +31,13 @@ def mean_squared_error_dict(a, b):
     return sum_sq / count
 
 
+def safe_mse(a: Dict[str, List[float]],
+             b: Dict[str, List[float]]) -> float | None:
+    """Return MSE or None if we can't compute it (no overlap, etc.)."""
+    try:
+        return mean_squared_error_dict(a, b)
+    except ValueError:
+        return None
 
 class CompareResults(Step):
     config_schema = {}
@@ -48,36 +56,46 @@ class CompareResults(Step):
         results_map = inputs.get("results", {})
         if not isinstance(results_map, dict) or len(results_map) < 2:
             raise ValueError(
-                "update expects inputs['results'] to be a dict with at least two entries."
+                "CompareResults.update expects inputs['results'] "
+                "to be a dict with at least two entries."
             )
 
-        # 1) Choose reference (first key)
-        result_ids = list(results_map.keys())
-        ref_id = result_ids[0]
-        ref_res = results_map[ref_id]
+        engine_ids = list(results_map.keys())
 
-        ref_species = ref_res.get("species_concentrations", {})
-        ref_flux = ref_res.get("reaction_fluxes", {})
+        # Extract species time-series per engine
+        species_by_id = {
+            rid: (results_map[rid].get("concentrations", {}) or {})
+            for rid in engine_ids
+        }
 
-        species_mse_by_id = {}
-        flux_mse_by_id = {}
+        # Initialize symmetric MSE matrix
+        species_mse = {
+            i: {j: None for j in engine_ids} for i in engine_ids
+        }
 
-        # 2) Compare each other result against the reference
-        for rid in result_ids[1:]:
-            res = results_map[rid]
+        # Pairwise MSE computation
+        for i_idx, i in enumerate(engine_ids):
+            for j_idx, j in enumerate(engine_ids):
 
-            species = res.get("species_concentrations", {})
-            flux = res.get("reaction_fluxes", {})
+                if i == j:
+                    species_mse[i][j] = 0.0
+                    continue
 
-            species_mse = mean_squared_error_dict(ref_species, species)
-            flux_mse = mean_squared_error_dict(ref_flux, flux)
+                # Only compute once per pair (i < j)
+                if j_idx <= i_idx:
+                    continue
 
-            species_mse_by_id[rid] = species_mse
-            flux_mse_by_id[rid] = flux_mse
+                try:
+                    mse = mean_squared_error_dict(species_by_id[i], species_by_id[j])
+                except Exception:
+                    mse = None
+
+                species_mse[i][j] = mse
+                species_mse[j][i] = mse
 
         return {
-            'comparison': {
-                'species_mse_by_id': species_mse_by_id,
-                'flux_mse_by_id': flux_mse_by_id,
+            "comparison": {
+                "species_mse": species_mse
             }
         }
+

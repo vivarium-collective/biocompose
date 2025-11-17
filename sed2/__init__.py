@@ -4,8 +4,9 @@ sed_types = {
     'result': {
         'time': 'list[float]',
         'concentrations': 'map[list[float]]',
-        'fluxes': 'map[list[float]]'},
-    'results': 'map[result]'}
+    },
+    'results': 'map[result]'
+}
 
 def register_types(core):
     for key, schema in sed_types.items():
