@@ -17,7 +17,7 @@ class TelluriumUTCStep(Step):
     def initialize(self, config):
         model_source = self.config["model_source"]
 
-        # ----- Resolve path -----------
+        # ----- Resolve path relative to sed2 root -----------
         if not model_source.startswith(("http://", "https://")):
             model_path = Path(model_source)
             if not model_path.is_absolute():
@@ -39,6 +39,10 @@ class TelluriumUTCStep(Step):
         # ----- sim parameters -----
         self.time = float(self.config.get("time", 1.0))
         self.n_points = int(self.config.get("n_points", 2))
+        if self.n_points < 2:
+            raise ValueError(
+                f"TelluriumUTCStep: n_points must be >= 2, got {self.n_points}"
+            )
 
     # ------------------------------------------------
     # process-bigraph API
@@ -76,7 +80,7 @@ class TelluriumUTCStep(Step):
             if sid in self._species_index:
                 self.rr.setValue(sid, float(value))
 
-        # 3) Run simulation: from 0 -> interval, n_points samples
+        # 3) Run simulation: from 0 -> self.time, n_points samples
         tc = self.rr.simulate(0, self.time, self.n_points)
         colnames = list(tc.colnames)
 
@@ -88,7 +92,9 @@ class TelluriumUTCStep(Step):
 
         # Time
         if "time" not in norm_to_index:
-            raise RuntimeError(f"'time' column not found in Tellurium result. Columns: {colnames}")
+            raise RuntimeError(
+                f"'time' column not found in Tellurium result. Columns: {colnames}"
+            )
         time_idx = norm_to_index["time"]
         time = tc[:, time_idx].tolist()
 
@@ -118,9 +124,7 @@ class TelluriumUTCStep(Step):
         for sid, idx in species_cols.items():
             self.rr.setValue(sid, float(tc[last_row, idx]))
 
-        import ipdb; ipdb.set_trace()
-
-        # 7) Send update
+        # 7) Send update — structured for easy comparison / aggregation
         return {
             "result": {
                 "time": time,

@@ -62,7 +62,6 @@ def run_comparison_experiment(core):
     print(
         sim.state['comparison_result'])
 
-    import ipdb; ipdb.set_trace()
 
 
 if __name__ == '__main__':

@@ -45,8 +45,6 @@ class CompareResults(Step):
         }
 
     def update(self, inputs):
-        import ipdb; ipdb.set_trace()
-
         results_map = inputs.get("results", {})
         if not isinstance(results_map, dict) or len(results_map) < 2:
             raise ValueError(

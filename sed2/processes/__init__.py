@@ -1,7 +1,7 @@
 from process_bigraph import ProcessTypes
 from sed2.processes.copasi_process import CopasiUTCStep, CopasiUTCProcess, CopasiSteadyStateStep
 from sed2.processes.tellurium_process import TelluriumUTCStep, TelluriumSteadyStateStep
-from sed2.processes.helper_processes import CompareResults
+from sed2.processes.comparison_processes import CompareResults
 
 
 PROCESS_DICT = {

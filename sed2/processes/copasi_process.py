@@ -84,7 +84,15 @@ class CopasiUTCStep(Step):
 
         # Cache identifiers
         spec_df = get_species(model=self.dm)
-        self.species_names = spec_df.index.tolist()
+
+        # canonical external IDs: SBML ids
+        self.species_ids = spec_df["sbml_id"].tolist()
+
+        # mapping SBML id -> COPASI display name (index)
+        self.sbml_to_name = {
+            spec_df.loc[name, "sbml_id"]: name
+            for name in spec_df.index
+        }
 
         rxn_df = get_reactions(model=self.dm)
         self.reaction_names = rxn_df.index.tolist()
@@ -99,10 +107,12 @@ class CopasiUTCStep(Step):
 
     def initial_state(self) -> Dict[str, Any]:
         species_concentrations = {
-            name: _get_transient_concentration(name=name, dm=self.dm)
-            for name in self.species_names
+            sbml_id: _get_transient_concentration(
+                name=self.sbml_to_name[sbml_id],  # COPASI name
+                dm=self.dm
+            )
+            for sbml_id in self.species_ids
         }
-
         rxn_df = get_reactions(model=self.dm)
         reaction_fluxes = {
             rxn_id: float(rxn_df.loc[rxn_id, 'flux'])
@@ -139,22 +149,23 @@ class CopasiUTCStep(Step):
         # --- Run COPASI time course with intervals = n_points - 1 ---
         tc = run_time_course(
             start_time=0.0,
-            duration=self.interval,
-            intervals=self.intervals,   # <-- NEW
+            duration=self.config['time'],
+            intervals=self.intervals,
             update_model=True,
+            use_sbml_id=True,
             model=self.dm,
         )
 
         # Time series
         time_list = tc.index.to_list()
 
-        species_json = {
-            s: tc[s].to_list()
-            for s in self.species_names
-            if s in tc.columns
+        species_update = {
+            sid: tc[sid].to_list()
+            for sid in self.species_ids
+            if sid in tc.columns
         }
 
-        flux_json = {
+        flux_update = {
             r: tc[r].to_list()
             for r in self.reaction_names
             if r in tc.columns
@@ -162,10 +173,8 @@ class CopasiUTCStep(Step):
 
         result = {
             "time": time_list,
-            "concentrations": {'_add': species_json},
-            "fluxes": {'_add': flux_json}}
-
-        import ipdb; ipdb.set_trace()
+            "concentrations": {'_add': species_update},
+            "fluxes": {'_add': flux_update}}
 
         return {"result": result}
 
@@ -175,7 +184,7 @@ class CopasiSteadyStateStep(Step):
 
     config_schema = {
         'model_source': 'string',
-        'time': 'float',  # kept for symmetry with CopasiUTCStep, not used
+        'time': 'float',  # kept for symmetry, not used
     }
 
     def __init__(self, config=None, core=None):
@@ -183,104 +192,129 @@ class CopasiSteadyStateStep(Step):
 
         model_source = self.config['model_source']
 
-        # Make sure the path is correct (relative to this file if needed)
+        # ---- Resolve path relative to project root ----
         if not (model_source.startswith('http://') or model_source.startswith('https://')):
             model_path = Path(model_source)
             if not model_path.is_absolute():
-                # go to the *project root*, not the processes/ directory
                 project_root = Path(__file__).parent.parent
                 model_path = project_root / model_path
             model_source = str(model_path)
 
-        # basico DataModel
+        # ---- Load COPASI model ----
         self.dm = load_model(model_source)
-
         if self.dm is None:
             raise RuntimeError(
                 f"load_model({model_source!r}) returned None. "
                 "Check that the file exists and is a valid COPASI/SBML model."
             )
 
-        # underlying COPASI CModel
         self.cmodel = self.dm.getModel()
 
         spec_df = get_species(model=self.dm)
-        self.species_names = spec_df.index.tolist()
+
+        # External canonical IDs: SBML IDs
+        self.species_ids = spec_df["sbml_id"].tolist()
+
+        # Mapping: SBML ID -> COPASI display name (index)
+        self.sbml_to_name = {
+            spec_df.loc[name, "sbml_id"]: name
+            for name in spec_df.index
+        }
 
         rxn_df = get_reactions(model=self.dm)
-        self.reaction_names = rxn_df.index.tolist()
+        # These are typically SBML reaction ids already
+        self.reaction_ids = rxn_df.index.tolist()
 
+    # ------------------------------------------------
+    # initial state (SBML IDs externally)
+    # ------------------------------------------------
     def initial_state(self) -> Dict[str, Any]:
         """
-        Just report the current transient concentrations as the starting point.
-        (Same pattern as CopasiUTCStep.)
+        Report current transient concentrations keyed by SBML ID.
         """
         species_concentrations = {
-            name: _get_transient_concentration(name=name, dm=self.dm)
-            for name in self.species_names
+            sbml_id: _get_transient_concentration(
+                name=self.sbml_to_name[sbml_id],  # COPASI name
+                dm=self.dm
+            )
+            for sbml_id in self.species_ids
         }
 
         return {
             'species_concentrations': species_concentrations,
         }
 
+    # ------------------------------------------------
+    # ports
+    # ------------------------------------------------
     def inputs(self):
+        # Externally everything uses SBML IDs
         return {
-            'species_concentrations': 'map[float]',
-            'species_counts': 'map[float]',
+            'species_concentrations': 'map[float]',  # SBML IDs
+            'species_counts': 'map[float]',          # SBML IDs
         }
 
     def outputs(self):
+        # Match TelluriumSteadyStateStep: nested results
         return {
             'results': 'any',
         }
 
+    # ------------------------------------------------
+    # steady-state update
+    # ------------------------------------------------
     def update(self, inputs):
-        # --- 1) Prepare changes and update initial values efficiently ---
+        # 1) Prefer counts, otherwise concentrations (keys are SBML IDs)
+        spec_data = (
+            inputs.get('species_counts')
+            or inputs.get('species_concentrations')
+            or {}
+        )
 
-        # Prefer counts if present, otherwise concentrations
-        spec_data = inputs.get('species_counts') or inputs.get('species_concentrations') or {}
-
-        changes = [
-            (name, float(value))
-            for name, value in spec_data.items()
-            if name in self.species_names
-        ]
+        # Convert SBML IDs -> COPASI names for internal set
+        changes = []
+        for sbml_id, value in spec_data.items():
+            name = self.sbml_to_name.get(sbml_id)
+            if name is not None:
+                changes.append((name, float(value)))
 
         if changes:
             _set_initial_concentrations(changes, self.dm)
 
-        # --- 2) Run COPASI steady-state task ---
-        # After run_steadystate(update_model=True), get_species/get_reactions
-        # contain steady-state values.
-        run_steadystate(update_model=True, model=self.dm)
+        # 2) Run COPASI steady-state task
+        # (use_sbml_id affects task I/O naming, but we read from get_species anyway)
+        run_steadystate(
+            update_model=True,
+            use_sbml_id=True,
+            model=self.dm,
+        )
 
-        # --- 3) Read back steady-state species concentrations ---
+        # 3) Read back steady-state species concentrations (SBML IDs externally)
         spec_df = get_species(model=self.dm)
-        # basico steady-state example uses the 'concentration' column
-        species_conc_ss = {
-            name: float(spec_df.loc[name, 'concentration'])
-            for name in self.species_names
-            if name in spec_df.index
-        }
+        # spec_df is indexed by COPASI name, with 'sbml_id' and 'concentration' columns
+        species_conc_ss = {}
+        for name in spec_df.index:
+            sbml_id = spec_df.loc[name, "sbml_id"]
+            if sbml_id in self.species_ids:
+                species_conc_ss[sbml_id] = float(spec_df.loc[name, "concentration"])
 
-        # --- 4) Read back steady-state reaction fluxes ---
+        # 4) Steady-state reaction fluxes
         rxn_df = get_reactions(model=self.dm)
         reaction_fluxes_ss = {
-            rxn_id: float(rxn_df.loc[rxn_id, 'flux'])
-            for rxn_id in self.reaction_names
-            if rxn_id in rxn_df.index
+            rid: float(rxn_df.loc[rid, 'flux'])
+            for rid in self.reaction_ids
+            if rid in rxn_df.index
         }
 
-        # --- 5) Package as a one-point "time series" to match CopasiUTCStep ---
-        time_list = [0.0]  # single steady-state time point
+        # 5) Package as one-point "time series" (t = 0.0) to match Tellurium
+        time_list = [0.0]
 
-        species_json = {name: [value] for name, value in species_conc_ss.items()}
-        flux_json = {rid: [value] for rid, value in reaction_fluxes_ss.items()}
+        species_json = {sid: [val] for sid, val in species_conc_ss.items()}
+        flux_json = {rid: [val] for rid, val in reaction_fluxes_ss.items()}
 
         results = {
             "time": time_list,
-            "species_concentrations": species_json,
+            "species_concentrations": species_json,  # SBML IDs as keys
             "reaction_fluxes": flux_json,
         }
 
@@ -291,6 +325,8 @@ class CopasiUTCProcess(Process):
 
     config_schema = {
         'model_source': 'string',
+        'time': 'float',
+        'intervals': 'integer',
     }
 
     def __init__(self, config=None, core=None):
@@ -298,104 +334,130 @@ class CopasiUTCProcess(Process):
 
         model_source = self.config['model_source']
 
-        # Make sure the path is correct (relative to this file if needed)
+        # ---- Resolve path relative to sed2 project root ----
         if not (model_source.startswith('http://') or model_source.startswith('https://')):
             model_path = Path(model_source)
             if not model_path.is_absolute():
-                # go to the *project root*, not the processes/ directory
                 project_root = Path(__file__).parent.parent
                 model_path = project_root / model_path
             model_source = str(model_path)
 
-        # basico DataModel
+        # ---- Load COPASI model ----
         self.dm = load_model(model_source)
-
         if self.dm is None:
             raise RuntimeError(
-                f"load_model({model_source!r}) returned None. "
-                "Check that the file exists and is a valid COPASI/SBML model."
+                f"Could not load model: {model_source!r}"
             )
 
-        # underlying COPASI CModel (used by the speed-up helpers)
         self.cmodel = self.dm.getModel()
 
+        # ---- Species table from basico ----
         spec_df = get_species(model=self.dm)
-        self.species_names = spec_df.index.tolist()
 
+        # canonical external IDs (SBML IDs)
+        self.species_ids = spec_df["sbml_id"].tolist()
+
+        # sbml → COPASI-name
+        self.sbml_to_name = {
+            spec_df.loc[name, "sbml_id"]: name
+            for name in spec_df.index
+        }
+
+        # ---- Reaction IDs ----
         rxn_df = get_reactions(model=self.dm)
-        self.reaction_names = rxn_df.index.tolist()
+        self.reaction_ids = rxn_df.index.tolist()
 
+        # ---- Sim parameters ----
+        self.time = float(self.config.get("time", 1.0))
+        self.intervals = int(self.config.get("intervals", 10))
+
+    # -----------------------------------------------------------------
+    # initial state
+    # -----------------------------------------------------------------
     def initial_state(self) -> Dict[str, Any]:
-        species_concentrations = {
-            name: _get_transient_concentration(name=name, dm=self.dm)
-            for name in self.species_names
-        }
-
-        rxn_df = get_reactions(model=self.dm)
-        reaction_fluxes = {
-            rxn_id: float(rxn_df.loc[rxn_id, 'flux'])
-            for rxn_id in self.reaction_names
-        }
-
+        # Export *SBML IDs* externally
         return {
-            'species_concentrations': species_concentrations,
-            # 'reaction_fluxes': reaction_fluxes,
+            "species_concentrations": {
+                sbml_id: _get_transient_concentration(
+                    name=self.sbml_to_name[sbml_id],  # COPASI name
+                    dm=self.dm
+                )
+                for sbml_id in self.species_ids
+            }
         }
 
+    # -----------------------------------------------------------------
+    # I/O schema
+    # -----------------------------------------------------------------
     def inputs(self):
         return {
-            'species_concentrations': 'map[float]',
-            'species_counts': 'map[float]',
+            "species_concentrations": "map[float]",  # SBML IDs
+            "species_counts": "map[float]",          # SBML IDs
         }
 
     def outputs(self):
-        # Keep nested 'results' for now to match your original API.
         return {
-            'species_concentrations': 'map[float]',
-            'reaction_fluxes': 'map[float]',
+            "species_concentrations": "map[float]",  # SBML IDs
+            "reaction_fluxes": "map[float]",
+            "time": "list[float]",
         }
 
+    # -----------------------------------------------------------------
+    # update
+    # -----------------------------------------------------------------
     def update(self, inputs, interval):
-        # --- 1) Prepare changes and update initial values efficiently ---
+        # --- 1) Determine incoming species map (SBML IDs)
+        incoming = (
+            inputs.get("species_counts")
+            or inputs.get("species_concentrations")
+            or {}
+        )
 
-        # You can swap this to inputs['species_concentrations'] if that’s the true source
-        spec_data = inputs.get('species_counts', {}) or {}
-
-        # Only include species that actually exist in the model
-        changes = [
-            (name, float(value))
-            for name, value in spec_data.items()
-            if name in self.species_names
-        ]
+        # Convert SBML IDs → COPASI names for internal setting
+        changes = []
+        for sbml_id, value in incoming.items():
+            name = self.sbml_to_name.get(sbml_id)
+            if name is not None:
+                changes.append((name, float(value)))
 
         if changes:
             _set_initial_concentrations(changes, self.dm)
 
-        # --- 2) Run COPASI time course ---
+        # --- 2) Run time course with SBML-ID columns ----
         tc = run_time_course(
             start_time=0.0,
             duration=interval,
+            intervals=self.intervals,
             update_model=True,
+            use_sbml_id=True,   # <-- critical
             model=self.dm,
         )
 
-        # --- 3) Read back state using the fast helper ---
+        # Extract time points
+        time = tc["Time"].tolist() if "Time" in tc.columns else []
+
+        # --- 3) Read back final state: export SBML IDs ----
         species_concentrations = {
-            name: _get_transient_concentration(name=name, dm=self.dm)
-            for name in self.species_names
+            sbml_id: _get_transient_concentration(
+                name=self.sbml_to_name[sbml_id],
+                dm=self.dm
+            )
+            for sbml_id in self.species_ids
         }
 
-        # --- 4) Reaction fluxes  ---
+        # --- 4) Reaction fluxes (COPASI reaction IDs already match SBML IDs) ----
         rxn_df = get_reactions(model=self.dm)
         reaction_fluxes = {
-            rxn_id: float(rxn_df.loc[rxn_id, 'flux'])
-            for rxn_id in self.reaction_names
+            rxn_id: float(rxn_df.loc[rxn_id, "flux"])
+            for rxn_id in self.reaction_ids
         }
 
         return {
-            'species_concentrations': species_concentrations,
-            'reaction_fluxes': reaction_fluxes,
+            "species_concentrations": species_concentrations,
+            "reaction_fluxes": reaction_fluxes,
+            "time": time,
         }
+
 
 
 
