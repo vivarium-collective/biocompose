@@ -164,7 +164,7 @@ class CopasiUTCStep(Step):
             "concentrations": {'_add': species_update},
         }
 
-        print(f'CopasiUTCStep result: {result}')
+        # print(f'CopasiUTCStep result: {result}')
         return {"result": result}
 
 
