@@ -3,3 +3,4 @@
 __pycache__/
 sed2_demo.egg-info/
 uv.lock
+devenv.lock

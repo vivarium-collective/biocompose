@@ -39,4 +39,5 @@
         "comparison": ["comparison_result"]}}},
 
   "bridge": {
-    "result": ["comparison_result"]}}
+    "outputs": {
+      "result": ["comparison_result"]}}}
