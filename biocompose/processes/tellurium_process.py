@@ -142,9 +142,7 @@ class TelluriumSteadyStateStep(Step):
         "time": "float",   # unused, kept for symmetry
     }
 
-    def __init__(self, config=None, core=None):
-        super().__init__(config, core)
-
+    def initialize(self, config=None):
         model_source = self.config["model_source"]
 
         # ----- Resolve path ------

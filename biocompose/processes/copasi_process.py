@@ -59,9 +59,7 @@ class CopasiUTCStep(Step):
         'n_points': 'integer',
     }
 
-    def __init__(self, config=None, core=None):
-        super().__init__(config, core)
-
+    def initialize(self, config=None):
         model_source = self.config['model_source']
 
         # Path resolution
@@ -175,9 +173,7 @@ class CopasiSteadyStateStep(Step):
         'time': 'float',  # kept for symmetry, not used
     }
 
-    def __init__(self, config=None, core=None):
-        super().__init__(config, core)
-
+    def initialize(self, config=None):
         model_source = self.config['model_source']
 
         # ---- Resolve path relative to project root ----
@@ -317,9 +313,7 @@ class CopasiUTCProcess(Process):
         'intervals': 'integer',
     }
 
-    def __init__(self, config=None, core=None):
-        super().__init__(config, core)
-
+    def initialize(self, config=None):
         model_source = self.config['model_source']
 
         # ---- Resolve path relative to sed2 project root ----
