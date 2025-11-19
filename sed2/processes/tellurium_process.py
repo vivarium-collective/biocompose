@@ -130,7 +130,7 @@ class TelluriumUTCStep(Step):
                 "species_concentrations": {'_add': species_update},
                 # "fluxes": {'_add': flux_json},
             }
-        # print(f'TelluriumUTCStep result: {result}')
+
         return {
             "result": result
         }

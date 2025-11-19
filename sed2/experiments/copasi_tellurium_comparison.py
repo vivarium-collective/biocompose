@@ -74,7 +74,7 @@ def run_comparison_experiment(core):
         schema=sim.composition,
         core=core,
         out_dir='out',
-        filename=f"sed_comparison_bigraph",
+        filename=f"sed_comparison_bigraph_before",
         **plot_settings
     )
 
@@ -83,7 +83,13 @@ def run_comparison_experiment(core):
     print(
         sim.state['comparison_result'])
 
-
+    plot_bigraph(
+        state=sim.state,
+        schema=sim.composition,
+        core=core,
+        out_dir='out',
+        filename=f"sed_comparison_bigraph_after",
+        **plot_settings)
 
 if __name__ == '__main__':
     core = create_core()
