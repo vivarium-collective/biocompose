@@ -3,6 +3,8 @@ Experiment comparing simulation results from Copasi and Tellurium
 '''
 from sed2 import create_core
 from process_bigraph import Composite
+from bigraph_viz import plot_bigraph
+
 
 def run_comparison_experiment(core):
     doc = {
@@ -57,6 +59,25 @@ def run_comparison_experiment(core):
 
     doc = {'state': doc}
     sim = Composite(doc, core=core)
+
+    plot_settings = {}
+    plot_settings.update(dict(
+        dpi='300',
+        show_values=True,
+        show_types=True,
+        # collapse_redundant_processes={},
+        value_char_limit=20,
+        type_char_limit=40,
+    ))
+    plot_bigraph(
+        state=sim.state,
+        schema=sim.composition,
+        core=core,
+        out_dir='out',
+        filename=f"sed_comparison_bigraph",
+        **plot_settings
+    )
+
     sim.run(0)
 
     print(
@@ -66,4 +87,5 @@ def run_comparison_experiment(core):
 
 if __name__ == '__main__':
     core = create_core()
+    # core = register_types(core)
     run_comparison_experiment(core)

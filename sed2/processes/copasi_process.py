@@ -59,9 +59,7 @@ class CopasiUTCStep(Step):
         'n_points': 'integer',
     }
 
-    def __init__(self, config=None, core=None):
-        super().__init__(config, core)
-
+    def initialize(self, config=None):
         model_source = self.config['model_source']
 
         # Path resolution
@@ -114,13 +112,13 @@ class CopasiUTCStep(Step):
             for sbml_id in self.species_ids
         }
         return {
-            'concentrations': species_concentrations,
+            'species_concentrations': species_concentrations,
         }
 
     def inputs(self):
         return {
-            'concentrations': 'map[float]',
-            'counts': 'map[float]',
+            'species_concentrations': 'map[float]',
+            'species_counts': 'map[float]',
         }
 
     def outputs(self):
@@ -130,7 +128,7 @@ class CopasiUTCStep(Step):
 
     def update(self, inputs):
         # Apply incoming concentrations
-        spec_data = inputs.get('counts', {}) or {}
+        spec_data = inputs.get('species_counts', {}) or {}
         changes = [
             (name, float(value))
             for name, value in spec_data.items()
@@ -161,7 +159,7 @@ class CopasiUTCStep(Step):
 
         result = {
             "time": time_list,
-            "concentrations": {'_add': species_update},
+            "species_concentrations": {'_add': species_update},
         }
 
         # print(f'CopasiUTCStep result: {result}')
@@ -176,9 +174,7 @@ class CopasiSteadyStateStep(Step):
         'time': 'float',  # kept for symmetry, not used
     }
 
-    def __init__(self, config=None, core=None):
-        super().__init__(config, core)
-
+    def initialize(self, config=None):
         model_source = self.config['model_source']
 
         # ---- Resolve path relative to project root ----
@@ -303,8 +299,8 @@ class CopasiSteadyStateStep(Step):
 
         results = {
             "time": time_list,
-            "concentrations": species_json,  # SBML IDs as keys
-            "fluxes": flux_json,
+            "species_concentrations": species_json,  # SBML IDs as keys
+            "species_fluxes": flux_json,
         }
 
         return {"results": results}
@@ -318,9 +314,7 @@ class CopasiUTCProcess(Process):
         'intervals': 'integer',
     }
 
-    def __init__(self, config=None, core=None):
-        super().__init__(config, core)
-
+    def initialize(self, config=None):
         model_source = self.config['model_source']
 
         # ---- Resolve path relative to sed2 project root ----
@@ -386,8 +380,8 @@ class CopasiUTCProcess(Process):
 
     def outputs(self):
         return {
-            "concentrations": "map[float]",  # SBML IDs
-            "fluxes": "map[float]",
+            "species_concentrations": "map[float]",  # SBML IDs
+            "species_fluxes": "map[float]",
             "time": "list[float]",
         }
 

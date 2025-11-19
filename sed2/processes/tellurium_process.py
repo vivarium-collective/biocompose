@@ -127,7 +127,7 @@ class TelluriumUTCStep(Step):
         # 7) Send update — structured for easy comparison / aggregation
         result = {
                 "time": time,
-                "concentrations": {'_add': species_update},
+                "species_concentrations": {'_add': species_update},
                 # "fluxes": {'_add': flux_json},
             }
         # print(f'TelluriumUTCStep result: {result}')
@@ -143,9 +143,7 @@ class TelluriumSteadyStateStep(Step):
         "time": "float",   # unused, kept for symmetry
     }
 
-    def __init__(self, config=None, core=None):
-        super().__init__(config, core)
-
+    def initialize(self, config=None):
         model_source = self.config["model_source"]
 
         # ----- Resolve path ------
@@ -233,8 +231,8 @@ class TelluriumSteadyStateStep(Step):
 
         result = {
             "time": time_list,
-            "concentrations": species_json,
-            "fluxes": flux_json,
+            "species_concentrations": species_json,
+            "species_fluxes": flux_json,
         }
 
         return {"result": result}
