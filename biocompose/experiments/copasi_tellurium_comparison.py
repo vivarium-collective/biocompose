@@ -1,11 +1,11 @@
 '''
 Experiment comparing simulation results from Copasi and Tellurium
 '''
-from biocompose import create_core
-from process_bigraph import Composite
+
+from process_bigraph import Composite, generate_core
 
 def run_comparison_experiment(core):
-    doc = {
+    state = {
         # provide initial values to overwrite those in the configured model
         'species_concentrations': {},
         'species_counts': {},
@@ -55,15 +55,23 @@ def run_comparison_experiment(core):
         },
     }
 
-    doc = {'state': doc}
-    sim = Composite(doc, core=core)
+    bridge = {
+        'outputs': {
+            'result': ['comparison_result']}}
+
+    document = {
+        'state': state,
+        'bridge': bridge}
+
+    sim = Composite(
+        document,
+        core=core)
+
     sim.run(0)
 
-    print(
-        sim.state['comparison_result'])
-
+    print(sim.read_bridge())
 
 
 if __name__ == '__main__':
-    core = create_core()
+    core = generate_core()
     run_comparison_experiment(core)

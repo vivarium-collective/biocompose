@@ -7,7 +7,6 @@ import tellurium as te
 
 
 class TelluriumUTCStep(Step):
-
     config_schema = {
         "model_source": "string",
         "time": "float",
