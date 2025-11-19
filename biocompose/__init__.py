@@ -1,4 +1,4 @@
-from sed2.processes import register_processes, get_sed_core
+from biocompose.processes import register_processes, get_sed_core
 
 sed_types = {
     'result': {

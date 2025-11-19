@@ -229,7 +229,7 @@ class CopasiSteadyStateStep(Step):
         }
 
         return {
-            'species_concentrations': species_concentrations,
+            'concentrations': species_concentrations,
         }
 
     # ------------------------------------------------
@@ -238,8 +238,8 @@ class CopasiSteadyStateStep(Step):
     def inputs(self):
         # Externally everything uses SBML IDs
         return {
-            'species_concentrations': 'map[float]',  # SBML IDs
-            'species_counts': 'map[float]',          # SBML IDs
+            'concentrations': 'map[float]',  # SBML IDs
+            'counts': 'map[float]',          # SBML IDs
         }
 
     def outputs(self):
@@ -254,8 +254,8 @@ class CopasiSteadyStateStep(Step):
     def update(self, inputs):
         # 1) Prefer counts, otherwise concentrations (keys are SBML IDs)
         spec_data = (
-            inputs.get('species_counts')
-            or inputs.get('species_concentrations')
+            inputs.get('counts')
+            or inputs.get('concentrations')
             or {}
         )
 
@@ -365,7 +365,7 @@ class CopasiUTCProcess(Process):
     def initial_state(self) -> Dict[str, Any]:
         # Export *SBML IDs* externally
         return {
-            "species_concentrations": {
+            "concentrations": {
                 sbml_id: _get_transient_concentration(
                     name=self.sbml_to_name[sbml_id],  # COPASI name
                     dm=self.dm
@@ -379,8 +379,8 @@ class CopasiUTCProcess(Process):
     # -----------------------------------------------------------------
     def inputs(self):
         return {
-            "species_concentrations": "map[float]",  # SBML IDs
-            "species_counts": "map[float]",          # SBML IDs
+            "concentrations": "map[float]",  # SBML IDs
+            "counts": "map[float]",          # SBML IDs
         }
 
     def outputs(self):
@@ -396,8 +396,8 @@ class CopasiUTCProcess(Process):
     def update(self, inputs, interval):
         # --- 1) Determine incoming species map (SBML IDs)
         incoming = (
-            inputs.get("species_counts")
-            or inputs.get("species_concentrations")
+            inputs.get("counts")
+            or inputs.get("concentrations")
             or {}
         )
 

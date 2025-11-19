@@ -50,15 +50,15 @@ class TelluriumUTCStep(Step):
     def initial_state(self) -> Dict[str, Any]:
         conc = self.rr.getFloatingSpeciesConcentrations()
         return {
-            "species_concentrations": {
+            "concentrations": {
                 sid: float(conc[i]) for i, sid in enumerate(self.species_ids)
             }
         }
 
     def inputs(self):
         return {
-            "species_concentrations": "map[float]",
-            "species_counts": "map[float]",
+            "concentrations": "map[float]",
+            "counts": "map[float]",
         }
 
     def outputs(self):
@@ -70,8 +70,8 @@ class TelluriumUTCStep(Step):
     def update(self, inputs):
         # 1) Choose source
         incoming = (
-            inputs.get("species_counts")
-            or inputs.get("species_concentrations")
+            inputs.get("counts")
+            or inputs.get("concentrations")
             or {}
         )
 
@@ -177,13 +177,13 @@ class TelluriumSteadyStateStep(Step):
             for i, sid in enumerate(self.species_ids)
         }
         return {
-            "species_concentrations": species_concs,
+            "concentrations": species_concs,
         }
 
     def inputs(self):
         return {
-            "species_concentrations": "map[float]",
-            "species_counts": "map[float]",
+            "concentrations": "map[float]",
+            "counts": "map[float]",
         }
 
     def outputs(self):
@@ -195,8 +195,8 @@ class TelluriumSteadyStateStep(Step):
     def update(self, inputs):
         # 1) Prefer counts, fall back to concentrations
         spec_data = (
-            inputs.get("species_counts")
-            or inputs.get("species_concentrations")
+            inputs.get("counts")
+            or inputs.get("concentrations")
             or {}
         )
 

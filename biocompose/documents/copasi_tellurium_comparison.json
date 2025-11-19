@@ -11,8 +11,8 @@
         "time": 10,
         "n_points": 10},
       "inputs": {
-        "species_concentrations": ["species_concentrations"],
-        "species_counts": ["species_counts"]},
+        "concentrations": ["species_concentrations"],
+        "counts": ["species_counts"]},
       "outputs": {
         "result": ["results", "tellurium"]}},
 
@@ -24,8 +24,8 @@
         "time": 10,
         "n_points": 10},
       "inputs": {
-        "species_concentrations": ["species_concentrations"],
-        "species_counts": ["species_counts"]},
+        "concentrations": ["species_concentrations"],
+        "counts": ["species_counts"]},
       "outputs": {
         "result": ["results", "copasi"]}},
 

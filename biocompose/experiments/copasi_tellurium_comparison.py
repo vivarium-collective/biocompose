@@ -1,7 +1,7 @@
 '''
 Experiment comparing simulation results from Copasi and Tellurium
 '''
-from sed2 import create_core
+from biocompose import create_core
 from process_bigraph import Composite
 
 def run_comparison_experiment(core):
@@ -19,8 +19,8 @@ def run_comparison_experiment(core):
                 'n_points': 10,
             },
             'inputs': {
-                'species_concentrations': ['species_concentrations'],
-                'species_counts': ['species_counts']},
+                'concentrations': ['species_concentrations'],
+                'counts': ['species_counts']},
             'outputs': {
                 'result': ['results', 'tellurium'],
             },
@@ -35,8 +35,8 @@ def run_comparison_experiment(core):
                 'n_points': 10,
             },
             'inputs': {
-                'species_concentrations': ['species_concentrations'],
-                'species_counts': ['species_counts']},
+                'concentrations': ['species_concentrations'],
+                'counts': ['species_counts']},
             'outputs': {
                 'result': ['results', 'copasi'],
             },

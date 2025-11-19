@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sed2-demo"
+name = "biocompose"
 version = "0.0.1"
-description = "Implementing sed2 in terms of process-bigraph"
+description = "a package of biologically-related processes and types for process-bigraph"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
@@ -29,7 +29,7 @@ dev = [
 # Make sure all subpackages are included
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["sed2-demo*"]
+include = ["biocompose*"]
 exclude = ["tests*", "docs*"]
 
 # If you want console entry points later, uncomment and edit:
