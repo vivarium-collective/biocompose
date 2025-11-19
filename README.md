@@ -53,7 +53,7 @@ List all processes in the process registry (these are discovered from imported p
 Initialize a new composite from the comparison document:
 
 ```
-> curl -X POST -H "Content-Type: application/json" -d @sed2/documents/copasi_tellurium_comparison.json http://0.0.0.0:22222/process/composite/initialize
+> curl -X POST -H "Content-Type: application/json" -d @biocompose/documents/copasi_tellurium_comparison.json http://0.0.0.0:22222/process/composite/initialize
 
 "6775b066-c821-480d-a881-c06655ba009d"
 ```
