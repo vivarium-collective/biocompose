@@ -155,7 +155,7 @@ class CopasiUTCStep(Step):
 
         result = {
             "time": time_list,
-            "columns": tc.columns,
+            "columns": [c for c in tc.columns],
             "values": tc.values.tolist(),
             "n_spacial_dimensions": tc.shape,
         }
