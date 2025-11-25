@@ -6,6 +6,8 @@ import numpy
 from process_bigraph import Step, ProcessTypes
 import tellurium as te
 
+from biocompose.processes.utils import model_path_resolution
+
 
 class TelluriumUTCStep(Step):
     config_schema = {
@@ -17,17 +19,9 @@ class TelluriumUTCStep(Step):
     def initialize(self, config):
         model_source = self.config["model_source"]
 
-        # ----- Resolve path relative to sed2 root -----------
-        if not model_source.startswith(("http://", "https://")):
-            model_path = Path(model_source)
-            if not model_path.is_absolute():
-                project_root = Path(__file__).parent.parent
-                model_path = project_root / model_path
-            model_source = str(model_path)
-
         # ----- Minimal Tellurium load (SBML) -----
         try:
-            self.rr = te.loadSBMLModel(model_source)
+            self.rr = te.loadSBMLModel(model_path_resolution(model_source))
         except Exception as e:
             raise RuntimeError(f"Could not load SBML model: {model_source}\n{e}")
 
@@ -146,17 +140,9 @@ class TelluriumSteadyStateStep(Step):
     def initialize(self, config=None):
         model_source = self.config["model_source"]
 
-        # ----- Resolve path ------
-        if not model_source.startswith(("http://", "https://")):
-            model_path = Path(model_source)
-            if not model_path.is_absolute():
-                project_root = Path(__file__).parent.parent
-                model_path = project_root / model_path
-            model_source = str(model_path)
-
         # ----- Load SBML via Tellurium -----
         try:
-            self.rr = te.loadSBMLModel(model_source)
+            self.rr = te.loadSBMLModel(model_path_resolution(model_source))
         except Exception as e:
             raise RuntimeError(f"Could not load SBML model: {model_source}\n{e}")
 
