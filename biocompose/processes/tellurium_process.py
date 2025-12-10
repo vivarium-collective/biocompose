@@ -9,14 +9,8 @@ import tellurium as te
 from biocompose.processes.utils import model_path_resolution
 
 
-class TelluriumUTCStep(Step):
-    config_schema = {
-        "model_source": "string",
-        "time": "float",
-        "n_points": "integer",
-    }
-
-    def initialize(self, config):
+class TelluriumStep(Step):
+    def _tellurium_initialize(self):
         model_source = self.config["model_source"]
 
         # ----- Minimal Tellurium load (SBML) -----
@@ -29,14 +23,6 @@ class TelluriumUTCStep(Step):
         self.species_ids = list(self.rr.getFloatingSpeciesIds())
         self.reaction_ids = list(self.rr.getReactionIds())
         self._species_index = {sid: i for i, sid in enumerate(self.species_ids)}
-
-        # ----- sim parameters -----
-        self.time = float(self.config.get("time", 1.0))
-        self.n_points = int(self.config.get("n_points", 2))
-        if self.n_points < 2:
-            raise ValueError(
-                f"TelluriumUTCStep: n_points must be >= 2, got {self.n_points}"
-            )
 
     # ------------------------------------------------
     # process-bigraph API
@@ -55,6 +41,37 @@ class TelluriumUTCStep(Step):
             "species_counts": "map[float]",
         }
 
+    def set_road_runner_incoming_values(self, inputs):
+        spec_data = (
+                inputs.get("species_counts")
+                or inputs.get("species_concentrations")
+                or {}
+        )
+
+        # 2) Set incoming values on the model
+        for sid, value in spec_data.items():
+            if sid in self._species_index:
+                self.rr.setValue(sid, float(value))
+
+
+class TelluriumUTCStep(TelluriumStep):
+    config_schema = {
+        "model_source": "string",
+        "time": "float",
+        "n_points": "integer",
+    }
+
+    def initialize(self, config):
+        self._tellurium_initialize()
+
+        # ----- sim parameters -----
+        self.time = float(self.config.get("time", 1.0))
+        self.n_points = int(self.config.get("n_points", 2))
+        if self.n_points < 2:
+            raise ValueError(
+                f"TelluriumUTCStep: n_points must be >= 2, got {self.n_points}"
+            )
+
     def outputs(self):
         return {"result": "numeric_result"}
 
@@ -63,16 +80,8 @@ class TelluriumUTCStep(Step):
     # ------------------------------------------------
     def update(self, inputs):
         # 1) Choose source
-        incoming = (
-            inputs.get("species_counts")
-            or inputs.get("species_concentrations")
-            or {}
-        )
-
         # 2) Update species concentrations using Tellurium's setValue
-        for sid, value in incoming.items():
-            if sid in self._species_index:
-                self.rr.setValue(sid, float(value))
+        self.set_road_runner_incoming_values(inputs)
 
         # 3) Run simulation: from 0 -> self.time, n_points samples
         tc = self.rr.simulate(0, self.time, self.n_points)
@@ -84,11 +93,6 @@ class TelluriumUTCStep(Step):
             name.strip("[]"): i for i, name in enumerate(colnames)
         }
 
-        # Time
-        if "time" not in norm_to_index:
-            raise RuntimeError(
-                f"'time' column not found in Tellurium result. Columns: {colnames}"
-            )
         time_idx = norm_to_index["time"]
         time = tc[:, time_idx].tolist()
 
@@ -130,45 +134,14 @@ class TelluriumUTCStep(Step):
         }
 
 
-class TelluriumSteadyStateStep(Step):
+class TelluriumSteadyStateStep(TelluriumStep):
 
     config_schema = {
         "model_source": "string",
-        "time": "float",   # unused, kept for symmetry
     }
 
     def initialize(self, config=None):
-        model_source = self.config["model_source"]
-
-        # ----- Load SBML via Tellurium -----
-        try:
-            self.rr = te.loadSBMLModel(model_path_resolution(model_source))
-        except Exception as e:
-            raise RuntimeError(f"Could not load SBML model: {model_source}\n{e}")
-
-        # Cache species & reactions
-        self.species_ids = list(self.rr.getFloatingSpeciesIds())
-        self.reaction_ids = list(self.rr.getReactionIds())
-        self._species_index = {sid: i for i, sid in enumerate(self.species_ids)}
-
-    # ------------------------------------------------
-    # process-bigraph API
-    # ------------------------------------------------
-    def initial_state(self) -> Dict[str, Any]:
-        conc = self.rr.getFloatingSpeciesConcentrations()
-        species_concs = {
-            sid: float(conc[i])
-            for i, sid in enumerate(self.species_ids)
-        }
-        return {
-            "species_concentrations": species_concs,
-        }
-
-    def inputs(self):
-        return {
-            "species_concentrations": "map[float]",
-            "species_counts": "map[float]",
-        }
+        self._tellurium_initialize()
 
     def outputs(self):
         return {"result": "result"}
@@ -178,16 +151,8 @@ class TelluriumSteadyStateStep(Step):
     # ------------------------------------------------
     def update(self, inputs):
         # 1) Prefer counts, fall back to concentrations
-        spec_data = (
-            inputs.get("species_counts")
-            or inputs.get("species_concentrations")
-            or {}
-        )
-
         # 2) Set incoming values on the model
-        for sid, value in spec_data.items():
-            if sid in self._species_index:
-                self.rr.setValue(sid, float(value))
+        self.set_road_runner_incoming_values(inputs)
 
         # 3) Run steady-state computation
         #    RoadRunner steadyState() modifies the internal state to a (near-)steady state.
