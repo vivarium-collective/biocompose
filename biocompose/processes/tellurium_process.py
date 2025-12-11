@@ -5,6 +5,7 @@ from typing import Dict, Any
 import numpy
 from process_bigraph import Step, ProcessTypes
 import tellurium as te
+from roadrunner import RoadRunner
 
 from biocompose.processes.utils import model_path_resolution
 
@@ -15,7 +16,7 @@ class TelluriumStep(Step):
 
         # ----- Minimal Tellurium load (SBML) -----
         try:
-            self.rr = te.loadSBMLModel(model_path_resolution(model_source))
+            self.rr: RoadRunner = te.loadSBMLModel(model_path_resolution(model_source))
         except Exception as e:
             raise RuntimeError(f"Could not load SBML model: {model_source}\n{e}")
 
@@ -49,6 +50,7 @@ class TelluriumStep(Step):
         )
 
         # 2) Set incoming values on the model
+        print(spec_data)
         for sid, value in spec_data.items():
             if sid in self._species_index:
                 self.rr.setValue(sid, float(value))
@@ -78,10 +80,10 @@ class TelluriumUTCStep(TelluriumStep):
     # ------------------------------------------------
     # update logic
     # ------------------------------------------------
-    def update(self, inputs):
+    def update(self, state: Dict[str, Any], interval=None):
         # 1) Choose source
         # 2) Update species concentrations using Tellurium's setValue
-        self.set_road_runner_incoming_values(inputs)
+        self.set_road_runner_incoming_values(state)
 
         # 3) Run simulation: from 0 -> self.time, n_points samples
         tc = self.rr.simulate(0, self.time, self.n_points)
@@ -144,7 +146,7 @@ class TelluriumSteadyStateStep(TelluriumStep):
         self._tellurium_initialize()
 
     def outputs(self):
-        return {"result": "result"}
+        return {"result": "map[numeric_result]"}
 
     # ------------------------------------------------
     # steady-state computation
@@ -157,7 +159,7 @@ class TelluriumSteadyStateStep(TelluriumStep):
         # 3) Run steady-state computation
         #    RoadRunner steadyState() modifies the internal state to a (near-)steady state.
         try:
-            self.rr.steadyState()
+            confidence = self.rr.steadyState()
         except Exception as e:
             raise RuntimeError(f"Tellurium steadyState() failed: {e}")
 
@@ -180,10 +182,22 @@ class TelluriumSteadyStateStep(TelluriumStep):
         species_json = {sid: [val] for sid, val in species_ss.items()}
         flux_json = {rid: [val] for rid, val in flux_ss.items()}
 
+        steady_state = {
+            "time": [0],
+            "columns": self.rr.getFloatingSpeciesConcentrationsNamedArray().colnames,
+            "values": self.rr.getFloatingSpeciesConcentrationsNamedArray().tolist()
+        }
+
+        jacobian = {
+            "time": [0],
+            "columns": self.rr.getFullJacobian().colnames,
+            "values": self.rr.getFullJacobian().tolist()
+        }
+
+
         result = {
-            "time": time_list,
-            "species_concentrations": species_json,
-            "fluxes": flux_json,
+            "jacobian": jacobian,
+            "steady_state": steady_state,
         }
 
         return {"result": result}
