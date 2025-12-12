@@ -17,6 +17,7 @@ dependencies = [
     "tellurium",
     "rest-process",
     "biomodels",
+    "python-libsedml",
     "pytest"
 ]
 

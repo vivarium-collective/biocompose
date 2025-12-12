@@ -1,6 +1,7 @@
 from process_bigraph import generate_core, Composite
 
 import biomodels
+import libsedml
 
 
 def get_metadata(biomodel_ids):
@@ -18,16 +19,20 @@ def find_sedml(entry):
 
 def load_biomodel(entry):
     sbml = entry[0]
-    sedml = find_sedml(entry)
+    sedml_entry = find_sedml(entry)
+
+    sedml_file = biomodels.get_file(sedml_entry)
+
+    libsedml.read_SedML(sedml_file)
 
     # TODO: 
     #   * load/read sedml
     #   * find total_time, time_steps
 
-    total_time = ????
-    time_steps = ????
+    # total_time = ????
+    # time_steps = ????
 
-    return sbml, total_time, time_steps
+    # return sbml, total_time, time_steps
 
     import ipdb; ipdb.set_trace()
 
