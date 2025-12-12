@@ -16,6 +16,7 @@ dependencies = [
     "copasi-basico",
     "tellurium",
     "rest-process",
+    "biomodels",
     "pytest"
 ]
 
