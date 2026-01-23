@@ -1,4 +1,4 @@
-from process_bigraph import generate_core, Composite
+from process_bigraph import allocate_core, Composite
 
 import biomodels
 import libsedml
@@ -16,29 +16,41 @@ def find_sedml(entry):
         if line.name.endswith('.sedml'):
             return line
 
+# def find_sbml(entry):
+#     return entry[0]  # hack assumes sbml is first file in entry
+
+import os
+import tellurium as te
 
 def load_biomodel(entry):
-    sbml = entry[0]
+    sbml_entry = entry[0]
     sedml_entry = find_sedml(entry)
+    # sbml_file = find_sbml(entry)
 
     sedml_file = biomodels.get_file(sedml_entry)
+    sbml_file = biomodels.get_file(sbml_entry)
+    sed_ml_str = str(sedml_file)
+    sed_doc = libsedml.readSedMLFromFile(sed_ml_str)
 
-    libsedml.read_SedML(sedml_file)
+    # loop through tasks, look for uniform time course, get simulation time and save points.
 
-    # TODO: 
-    #   * load/read sedml
-    #   * find total_time, time_steps
 
-    # total_time = ????
-    # time_steps = ????
+
+
+
+    results = te.executeSEDML(sed_doc.toSed(),
+                              workingDir=os.path.dirname(sed_ml_str),
+                              )
+
+    breakpoint()
 
     # return sbml, total_time, time_steps
 
-    import ipdb; ipdb.set_trace()
 
 
 def run_biomodels(core):
-    biomodel_ids = biomodels.get_all_identifiers()[:10]
+    number_of_models = 2
+    biomodel_ids = biomodels.get_all_identifiers()[:number_of_models]
     biomodel_metadata = get_metadata(biomodel_ids)
 
     biomodel_models = {
@@ -46,7 +58,6 @@ def run_biomodels(core):
         for biomodel_id, metadata in biomodel_metadata.items()
     }
 
-    import ipdb; ipdb.set_trace()
 
     steps = {
         'copasi': 'local:CopasiUTCStep',
@@ -62,18 +73,21 @@ def run_biomodels(core):
                     '_type': 'step',
                     'address': step_address,
                     'config': {
-                        'model_source': 'models/BIOMD0000000012_url.xml',
-                        'time': 10,
+                        'model_source': 'models/BIOMD0000000012_url.xml',  # replace this with the retrieved sbml
+                        'time': 10,                     # replace with
                         'n_points': 10,
                     },
                     'inputs': {
                         'concentrations': ['species_concentrations'],
                         'counts': ['species_counts']},
                     'outputs': {
-                        'result': ['results', 'tellurium'],
+                        'result': ['results', step_name],
                     },
-                }
+                },
+                'plot': {}
             }
+
+            # export results as CSV for comparison with SED-ML results.
 
     
 
@@ -113,7 +127,7 @@ def run_biomodels(core):
     
 
 if __name__ == '__main__':
-    core = generate_core()
+    core = allocate_core()
     run_biomodels(core)
 
     print('biomodels')

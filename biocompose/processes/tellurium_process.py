@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 import numpy
-from process_bigraph import Step, ProcessTypes
+from process_bigraph import Step
 import tellurium as te
 from roadrunner import RoadRunner
 
@@ -237,7 +237,8 @@ def run_ss_test(core):
     print("Steady-state result:", out)
 
 if __name__ == "__main__":
-    core = ProcessTypes()
+    from process_bigraph import allocate_core
+    core = allocate_core()
     core.register_process("tellurium_utc", TelluriumUTCStep)
     run_utc_test(core)
     run_ss_test(core)

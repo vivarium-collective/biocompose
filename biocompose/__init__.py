@@ -21,10 +21,10 @@ standard_types = {
 
 
 def register_types(core):
-    for key, schema in sed_types.items():
-        core.register(key, schema)
-    for k, s in standard_types.items():
-        core.register(k, s)
+    # for key, schema in sed_types.items():
+    #     core.register(key, schema)
+    # for k, s in standard_types.items():
+    #     core.register(k, s)
     return core
 
 def create_core():
