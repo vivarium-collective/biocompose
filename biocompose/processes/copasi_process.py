@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 from typing import Dict, Any
+
+from pandas import DataFrame
 from process_bigraph import Process, Step, Composite, ProcessTypes, gather_emitter_results
 import COPASI
 from basico import (
@@ -12,6 +14,9 @@ from basico import (
     run_steadystate,
 )
 import COPASI
+
+from biocompose.processes.utils import model_path_resolution
+
 
 def _set_initial_concentrations(changes, dm):
     """
@@ -50,142 +55,18 @@ def _get_transient_concentration(name, dm):
     assert isinstance(species, COPASI.CMetab)
     return float(species.getConcentration())
 
+class BaseCopasi:
+    cmodel = None
+    dm = None
+    species_ids = None
+    reaction_ids = None
+    sbml_to_name = None
 
-class CopasiUTCStep(Step):
-
-    config_schema = {
-        'model_source': 'string',
-        'time': 'float',
-        'n_points': 'integer',
-    }
-
-    def initialize(self, config=None):
+    def interpret_sbml(self):
         model_source = self.config['model_source']
-
-        # Path resolution
-        if not model_source.startswith(('http://', 'https://')):
-            model_path = Path(model_source)
-            if not model_path.is_absolute():
-                project_root = Path(__file__).parent.parent
-                model_path = project_root / model_path
-            model_source = str(model_path)
-
-        # Load COPASI model
-        self.dm = load_model(model_source)
-        if self.dm is None:
-            raise RuntimeError(
-                f"load_model({model_source!r}) returned None. "
-                "Check that the file exists and is a valid COPASI/SBML model."
-            )
-
-        self.cmodel = self.dm.getModel()
-
-        # Cache identifiers
-        spec_df = get_species(model=self.dm)
-
-        # canonical external IDs: SBML ids
-        self.species_ids = spec_df["sbml_id"].tolist()
-
-        # mapping SBML id -> COPASI display name (index)
-        self.sbml_to_name = {
-            spec_df.loc[name, "sbml_id"]: name
-            for name in spec_df.index
-        }
-
-        rxn_df = get_reactions(model=self.dm)
-        self.reaction_names = rxn_df.index.tolist()
-
-        # Simulation parameters
-        self.interval = float(self.config.get('time', 1.0))
-        self.n_points = int(self.config.get('n_points', 2))   # <-- NEW
-        if self.n_points < 2:
-            raise ValueError("n_points must be >= 2")
-
-        self.intervals = self.n_points - 1   # COPASI requires this
-
-    def initial_state(self) -> Dict[str, Any]:
-        species_concentrations = {
-            sbml_id: _get_transient_concentration(
-                name=self.sbml_to_name[sbml_id],  # COPASI name
-                dm=self.dm
-            )
-            for sbml_id in self.species_ids
-        }
-        return {
-            'concentrations': species_concentrations,
-        }
-
-    def inputs(self):
-        return {
-            'concentrations': 'map[float]',
-            'counts': 'map[float]',
-        }
-
-    def outputs(self):
-        return {
-            'result': 'result',
-        }
-
-    def update(self, inputs):
-        # Apply incoming concentrations
-        spec_data = inputs.get('counts', {}) or {}
-        changes = [
-            (name, float(value))
-            for name, value in spec_data.items()
-            if name in self.species_ids
-        ]
-
-        if changes:
-            _set_initial_concentrations(changes, self.dm)
-
-        # --- Run COPASI time course with intervals = n_points - 1 ---
-        tc = run_time_course(
-            start_time=0.0,
-            duration=self.config['time'],
-            intervals=self.intervals,
-            update_model=True,
-            use_sbml_id=True,
-            model=self.dm,
-        )
-
-        # Time series
-        time_list = tc.index.to_list()
-
-        species_update = {
-            sid: tc[sid].to_list()
-            for sid in self.species_ids
-            if sid in tc.columns
-        }
-
-        result = {
-            "time": time_list,
-            "species_concentrations": species_update,
-        }
-
-        return {"result": result}
-
-
-
-class CopasiSteadyStateStep(Step):
-
-    config_schema = {
-        'model_source': 'string',
-        'time': 'float',  # kept for symmetry, not used
-    }
-
-    def initialize(self, config=None):
-        model_source = self.config['model_source']
-
-        # ---- Resolve path relative to project root ----
-        if not (model_source.startswith('http://') or model_source.startswith('https://')):
-            model_path = Path(model_source)
-            if not model_path.is_absolute():
-                project_root = Path(__file__).parent.parent
-                model_path = project_root / model_path
-            model_source = str(model_path)
 
         # ---- Load COPASI model ----
-        self.dm = load_model(model_source)
+        self.dm = load_model(model_path_resolution(model_source))
         if self.dm is None:
             raise RuntimeError(
                 f"load_model({model_source!r}) returned None. "
@@ -209,24 +90,104 @@ class CopasiSteadyStateStep(Step):
         # These are typically SBML reaction ids already
         self.reaction_ids = rxn_df.index.tolist()
 
+    def get_concentrations_from_sbml(self) -> Dict[str, Any]:
+        return {
+            "species_concentrations": {
+                sbml_id: _get_transient_concentration(
+                    name=self.sbml_to_name[sbml_id],  # COPASI name
+                    dm=self.dm
+                )
+                for sbml_id in self.species_ids
+            }
+        }
+
+
+
+
+class CopasiUTCStep(Step, BaseCopasi):
+
+    config_schema = {
+        'model_source': 'string',
+        'time': 'float',
+        'n_points': 'integer',
+    }
+
+    def initialize(self, config=None):
+        self.interpret_sbml()
+
+        # Simulation parameters
+        self.interval = float(self.config.get('time', 1.0))
+        self.n_points = int(self.config.get('n_points', 2))   # <-- NEW
+        if self.n_points < 2:
+            raise ValueError("n_points must be >= 2")
+
+        self.intervals = self.n_points - 1   # COPASI requires this
+
+    def initial_state(self) -> Dict[str, Any]:
+        return self.get_concentrations_from_sbml()
+
+    def inputs(self):
+        return {
+            'species_concentrations': 'map[float]',
+            'species_counts': 'map[float]',
+        }
+
+    def outputs(self):
+        return {
+            'result': 'numeric_result',
+        }
+
+    def update(self, inputs):
+        # Apply incoming concentrations
+        spec_data = inputs.get('counts', {}) or {}
+        changes = [
+            (name, float(value))
+            for name, value in spec_data.items()
+            if name in self.species_ids
+        ]
+
+        if changes:
+            _set_initial_concentrations(changes, self.dm)
+
+        # --- Run COPASI time course with intervals = n_points - 1 ---
+        tc: DataFrame = run_time_course(
+            start_time=0.0,
+            duration=self.config['time'],
+            intervals=self.intervals,
+            update_model=True,
+            use_sbml_id=True,
+            model=self.dm,
+        )
+
+        # Time series
+        time_list = tc.index.to_list()
+
+        result = {
+            "time": time_list,
+            "columns": [c for c in tc.columns],
+            "values": tc.values.tolist(),
+            # "n_spacial_dimensions": tc.shape,
+        }
+
+        return {"result": result}
+
+
+
+class CopasiSteadyStateStep(Step, BaseCopasi):
+
+    config_schema = {
+        'model_source': 'string',
+        'time': 'float',  # kept for symmetry, not used
+    }
+
+    def initialize(self, config=None):
+        self.interpret_sbml()
+
     # ------------------------------------------------
     # initial state (SBML IDs externally)
     # ------------------------------------------------
     def initial_state(self) -> Dict[str, Any]:
-        """
-        Report current transient concentrations keyed by SBML ID.
-        """
-        species_concentrations = {
-            sbml_id: _get_transient_concentration(
-                name=self.sbml_to_name[sbml_id],  # COPASI name
-                dm=self.dm
-            )
-            for sbml_id in self.species_ids
-        }
-
-        return {
-            'concentrations': species_concentrations,
-        }
+        return self.get_concentrations_from_sbml()
 
     # ------------------------------------------------
     # ports
@@ -234,7 +195,7 @@ class CopasiSteadyStateStep(Step):
     def inputs(self):
         # Externally everything uses SBML IDs
         return {
-            'concentrations': 'map[float]',  # SBML IDs
+            'species_concentrations': 'map[float]',  # SBML IDs
             'counts': 'map[float]',          # SBML IDs
         }
 
@@ -305,7 +266,7 @@ class CopasiSteadyStateStep(Step):
         return {"results": results}
 
 
-class CopasiUTCProcess(Process):
+class CopasiUTCProcess(Process, BaseCopasi):
 
     config_schema = {
         'model_source': 'string',
@@ -314,40 +275,7 @@ class CopasiUTCProcess(Process):
     }
 
     def initialize(self, config=None):
-        model_source = self.config['model_source']
-
-        # ---- Resolve path relative to sed2 project root ----
-        if not (model_source.startswith('http://') or model_source.startswith('https://')):
-            model_path = Path(model_source)
-            if not model_path.is_absolute():
-                project_root = Path(__file__).parent.parent
-                model_path = project_root / model_path
-            model_source = str(model_path)
-
-        # ---- Load COPASI model ----
-        self.dm = load_model(model_source)
-        if self.dm is None:
-            raise RuntimeError(
-                f"Could not load model: {model_source!r}"
-            )
-
-        self.cmodel = self.dm.getModel()
-
-        # ---- Species table from basico ----
-        spec_df = get_species(model=self.dm)
-
-        # canonical external IDs (SBML IDs)
-        self.species_ids = spec_df["sbml_id"].tolist()
-
-        # sbml → COPASI-name
-        self.sbml_to_name = {
-            spec_df.loc[name, "sbml_id"]: name
-            for name in spec_df.index
-        }
-
-        # ---- Reaction IDs ----
-        rxn_df = get_reactions(model=self.dm)
-        self.reaction_ids = rxn_df.index.tolist()
+        self.interpret_sbml()
 
         # ---- Sim parameters ----
         self.time = float(self.config.get("time", 1.0))
@@ -357,16 +285,7 @@ class CopasiUTCProcess(Process):
     # initial state
     # -----------------------------------------------------------------
     def initial_state(self) -> Dict[str, Any]:
-        # Export *SBML IDs* externally
-        return {
-            "species_concentrations": {
-                sbml_id: _get_transient_concentration(
-                    name=self.sbml_to_name[sbml_id],  # COPASI name
-                    dm=self.dm
-                )
-                for sbml_id in self.species_ids
-            }
-        }
+        return self.get_concentrations_from_sbml()
 
     # -----------------------------------------------------------------
     # I/O schema
