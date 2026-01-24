@@ -1,5 +1,3 @@
-from biocompose.processes import register_processes, get_sed_core
-
 sed_types = {
     'result': {
         'time': 'list[float]',
@@ -20,14 +18,16 @@ standard_types = {
 }
 
 
-def register_types(core):
-    # for key, schema in sed_types.items():
-    #     core.register(key, schema)
-    # for k, s in standard_types.items():
-    #     core.register(k, s)
-    return core
+TYPES_DICT = {
+    **standard_types,
+    **sed_types
+}
 
-def create_core():
-    core = get_sed_core()
-    core = register_types(core)
+
+# -----------------------------------------------------------------------------
+# Public API
+# -----------------------------------------------------------------------------
+
+def register_types(core):
+    core.register_types(TYPES_DICT)
     return core

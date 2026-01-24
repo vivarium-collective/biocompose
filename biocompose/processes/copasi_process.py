@@ -397,9 +397,6 @@ def run_copasi_ss(core):
 if __name__ == '__main__':
     from process_bigraph import allocate_core
     core = allocate_core()
-    core.register_process('copasi_utc', CopasiUTCStep)
-    core.register_process('copasi_ss', CopasiSteadyStateStep)
-    core.register_process('copasi_process', CopasiUTCProcess)
 
     run_copasi_utc(core=core)
     run_copasi_ss(core=core)

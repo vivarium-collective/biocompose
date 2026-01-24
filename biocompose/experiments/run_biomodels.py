@@ -1,21 +1,23 @@
 """
 Load BioModels entries, extract UniformTimeCourse settings from SED-ML,
-resolve SBML source, and emit process-bigraph documents for UTC steps.
+resolve SBML source, and emit/run process-bigraph documents for UTC steps.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tempfile
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional
 
 import biomodels
 import libsedml
 
-from process_bigraph import allocate_core  # Composite optional depending on your runner
+from process_bigraph import allocate_core, Composite
 
 
 # ----------------------------
@@ -37,9 +39,9 @@ class UniformTimeCourseSpec:
 @dataclass(frozen=True)
 class BiomodelLoadResult:
     biomodel_id: str
-    sbml_path: str               # local file path
-    sedml_path: str              # local file path
-    utc: UniformTimeCourseSpec   # parsed from SED-ML
+    sbml_path: str
+    sedml_path: str
+    utc: UniformTimeCourseSpec
 
 
 # ----------------------------
@@ -51,29 +53,16 @@ _SEDML_RE = re.compile(r"\.sedml$", re.IGNORECASE)
 
 
 def _iter_entry_files(entry: Any) -> Iterable[Any]:
-    """
-    BioModels library return shapes can vary; this tries to normalize.
-
-    We accept:
-      - a list of file entries
-      - metadata dict containing something list-like under 'files'/'main_files'
-      - the raw object already iterable
-    """
     if entry is None:
         return []
-
-    if isinstance(entry, list) or isinstance(entry, tuple):
+    if isinstance(entry, (list, tuple)):
         return entry
-
     if isinstance(entry, dict):
         for key in ("files", "main_files", "model_files"):
             v = entry.get(key)
             if isinstance(v, (list, tuple)):
                 return v
-        # fall through: maybe dict isn't the right thing
         return []
-
-    # last resort: if it's iterable, try it
     try:
         return list(entry)
     except TypeError:
@@ -81,20 +70,17 @@ def _iter_entry_files(entry: Any) -> Iterable[Any]:
 
 
 def _file_name(obj: Any) -> str:
-    # entries often have .name; otherwise treat as str
     return getattr(obj, "name", str(obj))
 
 
 def find_first_sedml(entry_files: Iterable[Any]) -> Optional[Any]:
     for f in entry_files:
-        name = _file_name(f)
-        if _SEDML_RE.search(name):
+        if _SEDML_RE.search(_file_name(f)):
             return f
     return None
 
 
 def find_first_sbml(entry_files: Iterable[Any]) -> Optional[Any]:
-    # Prefer SBML-ish xml that is NOT sedml and not obvious “manifest”
     candidates = []
     for f in entry_files:
         name = _file_name(f)
@@ -103,7 +89,7 @@ def find_first_sbml(entry_files: Iterable[Any]) -> Optional[Any]:
         if _SBML_RE.search(name):
             candidates.append(f)
 
-    # Heuristic: prefer names containing "sbml" or "model"
+    # Prefer SBML-ish names
     for key in ("sbml", "model"):
         for c in candidates:
             if key in _file_name(c).lower():
@@ -121,28 +107,19 @@ def read_sedml_doc(sedml_path: str) -> libsedml.SedDocument:
     if doc is None:
         raise RuntimeError(f"libsedml returned None reading: {sedml_path}")
     if doc.getNumErrors() > 0:
-        # keep this strict; you can loosen if needed
         msg = doc.getErrorLog().toString()
         raise RuntimeError(f"SED-ML parse errors in {sedml_path}:\n{msg}")
     return doc
 
 
 def extract_first_uniform_time_course(sed_doc: libsedml.SedDocument) -> UniformTimeCourseSpec:
-    """
-    Finds the first UniformTimeCourse simulation in the doc and returns its settings.
-    More robust than checking type codes, since python bindings vary.
-    """
     n_sims = int(sed_doc.getNumSimulations())
     for i in range(n_sims):
         sim = sed_doc.getSimulation(i)
         if sim is None:
             continue
 
-        # Robustly detect a UniformTimeCourse:
-        # - in many bindings there is isSedUniformTimeCourse()
-        # - otherwise check for the attribute/methods that only UTC has
         is_utc = False
-
         if hasattr(sim, "isSedUniformTimeCourse"):
             try:
                 is_utc = bool(sim.isSedUniformTimeCourse())
@@ -150,27 +127,20 @@ def extract_first_uniform_time_course(sed_doc: libsedml.SedDocument) -> UniformT
                 is_utc = False
 
         if not is_utc:
-            # Fallback heuristic: UTC has these getters
             needed = ("getInitialTime", "getOutputStartTime", "getOutputEndTime", "getNumberOfPoints")
             is_utc = all(hasattr(sim, m) for m in needed)
 
         if not is_utc:
             continue
 
-        init_t = float(sim.getInitialTime())
-        out_start = float(sim.getOutputStartTime())
-        out_end = float(sim.getOutputEndTime())
-        n_pts = int(sim.getNumberOfPoints())
-
         return UniformTimeCourseSpec(
-            initial_time=init_t,
-            output_start_time=out_start,
-            output_end_time=out_end,
-            number_of_points=n_pts,
+            initial_time=float(sim.getInitialTime()),
+            output_start_time=float(sim.getOutputStartTime()),
+            output_end_time=float(sim.getOutputEndTime()),
+            number_of_points=int(sim.getNumberOfPoints()),
         )
 
     raise ValueError("No UniformTimeCourse simulation found in SED-ML.")
-
 
 
 def resolve_sbml_source_from_sedml(
@@ -178,11 +148,6 @@ def resolve_sbml_source_from_sedml(
     sedml_dir: str,
     fallback_sbml_path: str,
 ) -> str:
-    """
-    Many SED-ML docs reference the SBML via Model.source (relative path or URL).
-    We try to resolve a local path if it’s relative to the SED-ML file directory.
-    If it’s a URL or missing, we fallback to the SBML we found in the BioModels entry.
-    """
     if sed_doc.getNumModels() == 0:
         return fallback_sbml_path
 
@@ -190,20 +155,15 @@ def resolve_sbml_source_from_sedml(
     if model is None:
         return fallback_sbml_path
 
-    src = model.getSource()  # string
+    src = model.getSource()
     if not src:
         return fallback_sbml_path
 
-    # If it looks like a URL, don’t try to resolve locally here.
     if src.startswith(("http://", "https://", "urn:", "biomodels:", "BIOMD")):
         return fallback_sbml_path
 
-    # Local relative reference
     candidate = os.path.abspath(os.path.join(sedml_dir, src))
-    if os.path.exists(candidate):
-        return candidate
-
-    return fallback_sbml_path
+    return candidate if os.path.exists(candidate) else fallback_sbml_path
 
 
 # ----------------------------
@@ -211,17 +171,11 @@ def resolve_sbml_source_from_sedml(
 # ----------------------------
 
 def fetch_biomodel_files_to_dir(biomodel_file_entry: Any, out_dir: str) -> str:
-    """
-    Uses biomodels.get_file(entry) which *typically* downloads to a local path.
-    But some implementations return bytes or a temp path; we normalize to a file path.
-    """
     f = biomodels.get_file(biomodel_file_entry)
 
-    # Common case: it's already a path-like
     if isinstance(f, (str, os.PathLike)) and os.path.exists(str(f)):
         return str(f)
 
-    # If it's bytes-like or a string payload, write it
     name = _file_name(biomodel_file_entry)
     out_path = os.path.join(out_dir, name)
 
@@ -229,7 +183,6 @@ def fetch_biomodel_files_to_dir(biomodel_file_entry: Any, out_dir: str) -> str:
         Path(out_path).write_bytes(f)
         return out_path
 
-    # fallback: write string representation
     Path(out_path).write_text(str(f), encoding="utf-8")
     return out_path
 
@@ -255,15 +208,12 @@ def load_biomodel(biomodel_id: str, metadata_or_entry: Any) -> BiomodelLoadResul
         sedml_dir = os.path.dirname(os.path.abspath(sedml_path))
         resolved_sbml = resolve_sbml_source_from_sedml(sed_doc, sedml_dir, sbml_path)
 
-        # IMPORTANT: tmp dir will be deleted; persist files you need.
-        # So we copy them to a stable location next to cwd (or wherever you want).
         stable_dir = os.path.abspath(os.path.join("models", biomodel_id))
         os.makedirs(stable_dir, exist_ok=True)
 
         stable_sedml = os.path.join(stable_dir, os.path.basename(sedml_path))
         stable_sbml = os.path.join(stable_dir, os.path.basename(resolved_sbml))
 
-        # copy file contents
         Path(stable_sedml).write_bytes(Path(sedml_path).read_bytes())
         Path(stable_sbml).write_bytes(Path(resolved_sbml).read_bytes())
 
@@ -276,7 +226,7 @@ def load_biomodel(biomodel_id: str, metadata_or_entry: Any) -> BiomodelLoadResul
 
 
 # ----------------------------
-# Process-bigraph document creation
+# Document creation (matches your UTC Step demos)
 # ----------------------------
 
 def make_utc_step_state(
@@ -286,7 +236,9 @@ def make_utc_step_state(
     utc: UniformTimeCourseSpec,
 ) -> Dict[str, Any]:
     """
-    Creates the state snippet for a UTC step. Adjust ports to match your step’s actual contract.
+    CopasiUTCStep/TelluriumUTCStep ports:
+      inputs: species_concentrations, species_counts
+      outputs: result
     """
     return {
         f"{step_name}_step": {
@@ -294,24 +246,19 @@ def make_utc_step_state(
             "address": step_address,
             "config": {
                 "model_source": sbml_path,
-                # Interpret "time" as end time or duration depending on your step.
-                # Here we pass duration based on SED-ML output window:
                 "time": float(utc.duration),
                 "n_points": int(utc.number_of_points),
-                # You might also want:
-                # "initial_time": float(utc.initial_time),
-                # "output_start_time": float(utc.output_start_time),
             },
+            # ✅ list-of-paths, ✅ port names match Step.inputs()
             "inputs": {
-                "concentrations": ["species_concentrations"],
-                "counts": ["species_counts"],
+                "species_concentrations": [["species_concentrations"]],
+                "species_counts": [["species_counts"]],
             },
+            # ✅ list-of-paths
             "outputs": {
-                "result": ["results", step_name],
+                "result": [["results", step_name]],
             },
         },
-        # optional plot node / other analysis nodes
-        "plot": {},
     }
 
 
@@ -322,9 +269,20 @@ def make_biomodel_document(
     steps: Dict[str, str],
 ) -> Dict[str, Any]:
     """
-    Builds a document with one step per engine, namespaced under the biomodel_id.
+    Store schemas align with step contracts; numeric_result is assumed to exist already.
     """
-    state: Dict[str, Any] = {}
+    state: Dict[str, Any] = {
+        "species_concentrations": {},
+        "species_counts": {},
+        "results": {},
+    }
+
+    schema: Dict[str, Any] = {
+        "species_concentrations": "map[float]",
+        "species_counts": "map[float]",
+        # results[step_name] is numeric_result
+        "results": "map[numeric_result]",
+    }
 
     for engine_name, engine_address in steps.items():
         step_key = f"{biomodel_id}_{engine_name}"
@@ -337,22 +295,75 @@ def make_biomodel_document(
             )
         )
 
-    return {"state": state}
+    return {"schema": schema, "state": state}
 
 
 # ----------------------------
 # Runner
 # ----------------------------
 
+def run_composite_document(
+    document: Dict[str, Any],
+    core,
+    name: Optional[str] = None,
+    outdir: str = "out_biomodels",
+    time: Optional[float] = None,
+    save: bool = True,
+) -> Composite:
+    os.makedirs(outdir, exist_ok=True)
+
+    if "state" not in document or not isinstance(document.get("state"), dict):
+        document = {"state": document}
+
+    if name is None:
+        name = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    if time is None:
+        times = []
+        for node in document["state"].values():
+            if isinstance(node, dict) and node.get("_type") == "step":
+                t = node.get("config", {}).get("time")
+                if isinstance(t, (int, float)):
+                    times.append(float(t))
+        time = max(times) if times else 10.0
+
+    sim = Composite(document, core=core)
+
+    if save:
+        Path(os.path.join(outdir, f"{name}.json")).write_text(
+            json.dumps(document, indent=2), encoding="utf-8"
+        )
+        Path(os.path.join(outdir, f"{name}_schema.json")).write_text(
+            json.dumps(core.render(sim.schema), indent=2), encoding="utf-8"
+        )
+
+    print(f"⏱ Running {name} for {time}s ...")
+    sim.run(time)
+    print(f"✅ Done: {name}")
+
+    if save:
+        try:
+            serialized = core.serialize(sim.schema, sim.state)
+            Path(os.path.join(outdir, f"{name}_state.json")).write_text(
+                json.dumps(serialized, indent=2), encoding="utf-8"
+            )
+        except Exception as e:
+            print(f"⚠ Could not serialize final state: {e}")
+
+    return sim
+
+
 def run_biomodels(core, number_of_models: int = 2) -> List[BiomodelLoadResult]:
     biomodel_ids = biomodels.get_all_identifiers()[:number_of_models]
     biomodel_metadata = {bid: biomodels.get_metadata(bid) for bid in biomodel_ids}
 
+    # Addresses match your discovered step classes
     steps = {
         "copasi": "local:CopasiUTCStep",
         "tellurium": "local:TelluriumUTCStep",
     }
 
+    os.makedirs("documents", exist_ok=True)
     loaded: List[BiomodelLoadResult] = []
 
     for biomodel_id in biomodel_ids:
@@ -367,19 +378,20 @@ def run_biomodels(core, number_of_models: int = 2) -> List[BiomodelLoadResult]:
             steps=steps,
         )
 
-        # What you do here depends on how you run process-bigraph docs in your codebase.
-        # Examples (pick the one that matches your stack):
-        #
-        # composite = Composite.from_document(doc, core=core)
-        # out = composite.run(...)
-        #
-        # or:
-        # out = run_composite_document(doc, core=core)
-        #
-        # For now, we just save the doc for inspection:
-        out_path = os.path.join("documents", f"{biomodel_id}.json")
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        Path(out_path).write_text(__import__("json").dumps(doc, indent=2), encoding="utf-8")
+        # Save doc for inspection
+        Path(os.path.join("documents", f"{biomodel_id}.json")).write_text(
+            json.dumps(doc, indent=2), encoding="utf-8"
+        )
+
+        # Run composite
+        run_composite_document(
+            doc,
+            core=core,
+            name=f"{biomodel_id}_utc",
+            outdir="out_biomodels",
+            time=None,
+            save=True,
+        )
 
     return loaded
 

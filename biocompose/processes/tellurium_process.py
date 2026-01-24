@@ -239,6 +239,6 @@ def run_ss_test(core):
 if __name__ == "__main__":
     from process_bigraph import allocate_core
     core = allocate_core()
-    core.register_process("tellurium_utc", TelluriumUTCStep)
+
     run_utc_test(core)
     run_ss_test(core)
