@@ -1,4 +1,6 @@
-from process_bigraph import ProcessTypes
+# from process_bigraph import ProcessTypes
+from bigraph_schema import allocate_core
+
 from biocompose.processes.copasi_process import CopasiUTCStep, CopasiUTCProcess, CopasiSteadyStateStep
 from biocompose.processes.tellurium_process import TelluriumUTCStep, TelluriumSteadyStateStep
 from biocompose.processes.comparison_processes import CompareResults
@@ -21,5 +23,6 @@ def register_processes(core):
 
 
 def get_sed_core():
-    core = ProcessTypes()
+    from process_bigraph import allocate_core
+    core = allocate_core()
     return register_processes(core)
