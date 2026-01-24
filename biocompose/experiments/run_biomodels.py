@@ -235,11 +235,6 @@ def make_utc_step_state(
     sbml_path: str,
     utc: UniformTimeCourseSpec,
 ) -> Dict[str, Any]:
-    """
-    CopasiUTCStep/TelluriumUTCStep ports:
-      inputs: species_concentrations, species_counts
-      outputs: result
-    """
     return {
         f"{step_name}_step": {
             "_type": "step",
@@ -249,17 +244,17 @@ def make_utc_step_state(
                 "time": float(utc.duration),
                 "n_points": int(utc.number_of_points),
             },
-            # ✅ list-of-paths, ✅ port names match Step.inputs()
+            # ✅ paths are a single list, not list-of-lists
             "inputs": {
-                "species_concentrations": [["species_concentrations"]],
-                "species_counts": [["species_counts"]],
+                "species_concentrations": ["species_concentrations"],
+                "species_counts": ["species_counts"],
             },
-            # ✅ list-of-paths
             "outputs": {
-                "result": [["results", step_name]],
+                "result": ["results", step_name],
             },
         },
     }
+
 
 
 def make_biomodel_document(
