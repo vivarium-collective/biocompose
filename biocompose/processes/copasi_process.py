@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 from pandas import DataFrame
-from process_bigraph import Process, Step, Composite, ProcessTypes, gather_emitter_results
+from process_bigraph import Process, Step, Composite, gather_emitter_results
 import COPASI
 from basico import (
     load_model,
@@ -395,10 +395,8 @@ def run_copasi_ss(core):
 
 
 if __name__ == '__main__':
-    core = ProcessTypes()
-    core.register_process('copasi_utc', CopasiUTCStep)
-    core.register_process('copasi_ss', CopasiSteadyStateStep)
-    core.register_process('copasi_process', CopasiUTCProcess)
+    from process_bigraph import allocate_core
+    core = allocate_core()
 
     run_copasi_utc(core=core)
     run_copasi_ss(core=core)

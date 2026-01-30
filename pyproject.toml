@@ -16,6 +16,8 @@ dependencies = [
     "copasi-basico",
     "tellurium",
     "rest-process",
+    "biomodels",
+    "python-libsedml",
     "pytest"
 ]
 

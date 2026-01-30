@@ -2,7 +2,7 @@
 Experiment comparing simulation results from Copasi and Tellurium
 '''
 
-from process_bigraph import Composite, generate_core
+from process_bigraph import Composite, allocate_core
 
 def run_comparison_experiment(core):
     state = {
