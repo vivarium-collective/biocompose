@@ -221,7 +221,7 @@ def load_biomodel(biomodel_id: str, metadata_or_entry: Any) -> BiomodelLoadResul
         biomodel_id=biomodel_id,
         sbml_path=stable_sbml,
         sedml_path=stable_sedml,
-        utc=utc,
+        utc=utc,   # TODO also support steady state
     )
 
 
@@ -393,5 +393,5 @@ def run_biomodels(core, number_of_models: int = 2) -> List[BiomodelLoadResult]:
 
 if __name__ == "__main__":
     core = allocate_core()
-    loaded = run_biomodels(core, number_of_models=2)
+    loaded = run_biomodels(core, number_of_models=5)
     print(f"Loaded {len(loaded)} biomodel(s).")
